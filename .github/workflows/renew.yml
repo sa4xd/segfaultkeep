@@ -1,0 +1,59 @@
+name: Segfault SSH Login
+
+on:
+  schedule:
+    - cron: '0 */9 * * *'
+  workflow_dispatch:
+
+jobs:
+  ssh-login:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      SECRET_VALUE: ${{ secrets.SECRET_VALUE }}
+      SEGFAULT_PASS: segfault
+
+    steps:
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            /var/cache/apt
+            /var/lib/apt/lists
+          key: apt-cache-${{ runner.os }}
+          restore-keys: |
+            apt-cache-
+
+      - name: Install sshpass & ssh client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sshpass openssh-client
+
+      - name: Add Segfault host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -t rsa lsd.segfault.net >> ~/.ssh/known_hosts
+
+      - name: SSH using SetEnv + password
+        run: |
+          sshpass -p "$SEGFAULT_PASS" \
+            ssh -o "SetEnv SECRET=${SECRET_VALUE}" \
+                -o "StrictHostKeyChecking=no" \
+                root@lsd.segfault.net "sleep 30"
+      # Keep-alive commit
+      - name: Create keep-alive commit
+        run: |
+          echo "# Keep-alive commit" >> keepalive.md 2>/dev/null || true
+          echo "" >> keepalive.md
+          echo "Last keep-alive: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> keepalive.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add keepalive.md || true
+
+      - name: Commit & Push if changed
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: keep-alive commit - $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          file_pattern: keepalive.md
+          branch: ${{ github.head_ref || github.ref_name }}
