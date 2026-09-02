@@ -2,7 +2,8 @@ name: Segfault SSH Auto Session
 
 on:
   workflow_dispatch:
-
+  schedule:
+   - cron: '17 */8 * * *'
 jobs:
   ssh-job:
     runs-on: ubuntu-latest
