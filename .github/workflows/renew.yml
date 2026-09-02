@@ -1,26 +1,23 @@
-name: Segfault SSH Login
+name: Segfault SSH Auto Session
 
 on:
-  schedule:
-    - cron: '0 */9 * * *'
   workflow_dispatch:
 
 jobs:
-  ssh-login:
+  ssh-job:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-    env:
-      SECRET_VALUE: ${{ secrets.SECRET_VALUE }}
-      SEGFAULT_PASS: segfault
-
+      contents: write        # 必须！允许 action 推送 commit
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
       - name: Cache apt packages
         uses: actions/cache@v4
         with:
           path: |
             /var/cache/apt
-            /var/lib/apt/lists
+            /var/lib/apt
           key: apt-cache-${{ runner.os }}
           restore-keys: |
             apt-cache-
@@ -30,18 +27,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y sshpass openssh-client
 
-      - name: Add Segfault host key
+      - name: Install Python dependencies
         run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -t rsa lsd.segfault.net >> ~/.ssh/known_hosts
+          python3 -m pip install --upgrade pip
+          pip install pexpect
 
-      - name: SSH using SetEnv + password
+      - name: Run SSH automation
+        env:
+          HOST: lsd.segfault.net
+          USER: root
+          PASSWORD: segfault
+          SECRET: ${{ secrets.SECRETP }}
+          KEEP_TIME: 30
         run: |
-          sshpass -p "$SEGFAULT_PASS" \
-            ssh -o "SetEnv SECRET=${SECRET_VALUE}" \
-                -o "StrictHostKeyChecking=no" \
-                root@lsd.segfault.net "sleep 30"
-      # Keep-alive commit
+          python3 ssh_auto.py
+# ─────────────── 自动 commit 当前日期保活 ───────────────
       - name: Create keep-alive commit
         run: |
           echo "# Keep-alive commit" >> keepalive.md 2>/dev/null || true
@@ -56,4 +56,6 @@ jobs:
         with:
           commit_message: "chore: keep-alive commit - $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
           file_pattern: keepalive.md
+          skip_dirty_check: false
+          skip_fetch: false
           branch: ${{ github.head_ref || github.ref_name }}
